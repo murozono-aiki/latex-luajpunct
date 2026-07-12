@@ -1,0 +1,99 @@
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{luajpunct}[2026/07/11 v1.1 Japanese Punctuation Switcher for LuaLaTeX]
+
+\RequirePackage{luacode}
+
+\begin{luacode*}
+luajpunct = luajpunct or {}
+luajpunct.replace_kuten = false
+luajpunct.replace_touten = false
+luajpunct.is_active = true -- 手動でON/OFFするためのフラグ
+
+-- 1. 置換を無効化する環境のリスト（デフォルト）
+luajpunct.ignore_envs = {
+    ["verbatim"] = true,
+    ["verbatim*"] = true,
+    ["lstlisting"] = true,
+    ["minted"] = true
+}
+luajpunct.current_ignore_env = nil -- 現在入っている無効化環境の名前を保持
+
+function luajpunct.process(line)
+    -- 【A】ブロック環境（verbatim等）の終了判定
+    if luajpunct.current_ignore_env then
+        -- Luaのパターンマッチングで '*' が誤動作しないようエスケープ処理
+        local escaped_env = string.gsub(luajpunct.current_ignore_env, "%*", "%%%*")
+        local end_pat = "\\end%s*{" .. escaped_env .. "}"
+        
+        if string.find(line, end_pat) then
+            luajpunct.current_ignore_env = nil -- 環境から抜ける
+        end
+        return line -- 環境内（終了行を含む）は一切置換せずに返す
+    end
+
+    -- 【B】ブロック環境（verbatim等）の開始判定
+    local b_env = string.match(line, "\\begin%s*{([^}]+)}")
+    if b_env and luajpunct.ignore_envs[b_env] then
+        luajpunct.current_ignore_env = b_env
+        return line -- 開始行も置換せずに返す
+    end
+
+    -- 【C】手動で無効化されている場合は何もしない
+    if not luajpunct.is_active then
+        return line
+    end
+
+    -- 【D】インラインの \verb|...| や \verb*|...| の保護
+    local verb_store = {}
+    local verb_count = 0
+    -- \verb(任意のデリミタ)(中身)(同じデリミタ) を検知して一時退避
+    line = string.gsub(line, "(\\verb%*?)([^%a%*])(.-)%2", function(cmd, delim, content)
+        verb_count = verb_count + 1
+        local key = "@@VERB" .. verb_count .. "@@"
+        verb_store[key] = cmd .. delim .. content .. delim
+        return key
+    end)
+
+    -- 【E】エスケープ文字の退避
+    line = string.gsub(line, "\\。", "@@ESC_KUTEN@@")
+    line = string.gsub(line, "\\、", "@@ESC_TOUTEN@@")
+    
+    -- 【F】実際の置換処理
+    if luajpunct.replace_kuten then
+        line = string.gsub(line, "。", "．")
+    end
+    if luajpunct.replace_touten then
+        line = string.gsub(line, "、", "，")
+    end
+    
+    -- 【G】退避した文字列の復元
+    line = string.gsub(line, "@@ESC_KUTEN@@", "。")
+    line = string.gsub(line, "@@ESC_TOUTEN@@", "、")
+    
+    for k, v in pairs(verb_store) do
+        line = string.gsub(line, k, v)
+    end
+    
+    return line
+end
+
+luatexbase.add_to_callback('process_input_buffer', luajpunct.process, 'luajpunct.process')
+\end{luacode*}
+
+% 2. ユーザー向けコマンドの定義
+
+% 独自の環境を無効化リストに追加するコマンド
+\newcommand{\luajpunctIgnoreEnv}[1]{%
+    \directlua{luajpunct.ignore_envs["#1"] = true}%
+}
+
+% 任意の場所で一時的に置換をON/OFFするコマンド
+\newcommand{\luajpunctOn}{\directlua{luajpunct.is_active = true}}
+\newcommand{\luajpunctOff}{\directlua{luajpunct.is_active = false}}
+
+% 3. オプションの処理
+\DeclareOption{dot}{\directlua{luajpunct.replace_kuten = true}}
+\DeclareOption{comma}{\directlua{luajpunct.replace_touten = true}}
+\ProcessOptions\relax
+
+\endinput
