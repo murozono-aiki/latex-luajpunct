@@ -1,5 +1,9 @@
 \NeedsTeXFormat{LaTeX2e}
-\ProvidesPackage{luajpunct}[2026/07/11 v1.1 Japanese Punctuation Switcher for LuaLaTeX]
+\ProvidesPackage{luajpunct}[2026/07/12 v1.2 Japanese Punctuation Switcher for LuaLaTeX]
+
+% 他での再定義を防ぐためのマクロ定義
+\newcommand{\。}{。}
+\newcommand{\、}{、}
 
 \RequirePackage{luacode}
 
@@ -38,12 +42,20 @@ function luajpunct.process(line)
         return line -- 開始行も置換せずに返す
     end
 
-    -- 【C】手動で無効化されている場合は何もしない
+    -- 【C】マクロ定義の無視
+    if string.match(line, "\\(re)?newcommand{\\。}") then
+        return line -- 置換せずに返す
+    end
+    if string.match(line, "\\(re)?newcommand{\\、}") then
+        return line -- 置換せずに返す
+    end
+
+    -- 【D】手動で無効化されている場合は何もしない
     if not luajpunct.is_active then
         return line
     end
 
-    -- 【D】インラインの \verb|...| や \verb*|...| の保護
+    -- 【E】インラインの \verb|...| や \verb*|...| の保護
     local verb_store = {}
     local verb_count = 0
     -- \verb(任意のデリミタ)(中身)(同じデリミタ) を検知して一時退避
@@ -54,11 +66,11 @@ function luajpunct.process(line)
         return key
     end)
 
-    -- 【E】エスケープ文字の退避
+    -- 【F】エスケープ文字の退避
     line = string.gsub(line, "\\。", "@@ESC_KUTEN@@")
     line = string.gsub(line, "\\、", "@@ESC_TOUTEN@@")
     
-    -- 【F】実際の置換処理
+    -- 【G】実際の置換処理（オプションON時のみ）
     if luajpunct.replace_kuten then
         line = string.gsub(line, "。", "．")
     end
@@ -66,7 +78,7 @@ function luajpunct.process(line)
         line = string.gsub(line, "、", "，")
     end
     
-    -- 【G】退避した文字列の復元
+    -- 【H】退避した文字列の復元
     line = string.gsub(line, "@@ESC_KUTEN@@", "。")
     line = string.gsub(line, "@@ESC_TOUTEN@@", "、")
     
